@@ -3,7 +3,7 @@ name: Publish to PyPI
 # Publishes on a GitHub Release using PyPI Trusted Publishing (OIDC).
 # No API tokens are stored: the `pypi` environment + `id-token: write` let
 # GitHub mint a short-lived token PyPI trusts. Configure the trusted publisher
-# on PyPI for project `m68hc11` (owner anarkiwi, repo 68hc11emu, workflow
+# on PyPI for project `m68hc11` (owner anarkiwi, repo m68hc11, workflow
 # publish.yml, environment pypi) before the first release.
 
 on:

@@ -224,7 +224,7 @@ first manual upload, a trusted publisher) for project **`m68hc11`** with:
 | Field            | Value             |
 | ---------------- | ----------------- |
 | Owner            | `anarkiwi`        |
-| Repository       | `68hc11emu`       |
+| Repository       | `m68hc11`         |
 | Workflow name    | `publish.yml`     |
 | Environment name | `pypi`            |
 

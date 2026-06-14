@@ -36,9 +36,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/anarkiwi/68hc11emu"
-Repository = "https://github.com/anarkiwi/68hc11emu"
-Issues = "https://github.com/anarkiwi/68hc11emu/issues"
+Homepage = "https://github.com/anarkiwi/m68hc11"
+Repository = "https://github.com/anarkiwi/m68hc11"
+Issues = "https://github.com/anarkiwi/m68hc11/issues"
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
