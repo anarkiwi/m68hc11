@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "m68hc11"
+version = "0.1.0"
+description = "Instruction-level emulator for the Motorola 68HC11 microcontroller core"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Josh Bailey", email = "josh@overlyspecific.com" }]
+keywords = [
+    "68hc11",
+    "m68hc11",
+    "motorola",
+    "emulator",
+    "simulator",
+    "microcontroller",
+    "cpu",
+    "retrocomputing",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Emulators",
+    "Topic :: System :: Emulators",
+]
+
+[project.urls]
+Homepage = "https://github.com/anarkiwi/68hc11emu"
+Repository = "https://github.com/anarkiwi/68hc11emu"
+Issues = "https://github.com/anarkiwi/68hc11emu/issues"
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.setuptools]
+py-modules = ["m68hc11"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+# pyflakes (F), pycodestyle errors (E), warnings (W), isort (I), bugbear (B).
+# pyupgrade is intentionally omitted: we target 3.9 and keep typing.Optional /
+# typing.List style.  E741 (ambiguous name) is allowed: register/flag names
+# like `i`, `n`, `v`, `c` are domain vocabulary here.
+select = ["F", "E", "W", "I", "B"]
+ignore = ["E741"]

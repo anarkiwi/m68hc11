@@ -1,0 +1,18 @@
+version: 2
+updates:
+  # Keep GitHub Actions (checkout, setup-python, the PyPI publish action, …)
+  # pinned to current major versions.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+
+  # Watch the Python dependencies declared in pyproject.toml (the test extra).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
