@@ -57,6 +57,38 @@ print(state.d)        # 42
 print(state.cycles)   # 2 + 2 + 10 + 5 = 19 bus cycles
 ```
 
+## Hitachi HD6301 / HD6303 mode
+
+`m68hc11.HD6303` is a drop-in CPU variant for the Hitachi **HD6301 / HD6303**
+(the CMOS 6801/6803 core Yamaha and others used throughout the 1980s). Same API
+as `HC11` — only the instruction decode changes:
+
+- **Adds** the six Hitachi instructions: `XGDX` (`$18`), `SLP` (`$1A`), and the
+  `AIM` / `OIM` / `EIM` / `TIM` immediate-with-memory bit operations. On this
+  core `$18` and `$1A` are ordinary opcodes, **not** the 68HC11 prefix bytes.
+- **Removes** the 68HC11-only opcodes (the `$00` TEST opcode, `IDIV` / `FDIV`,
+  the `BSET` / `BCLR` / `BRSET` / `BRCLR` bit ops, `STOP`, and the Y register
+  with its `$18` / `$1A` / `$CD` prefix pages). Those bytes raise
+  `IllegalOpcode` rather than silently mis-decoding as their HC11 meaning.
+
+```python
+import m68hc11
+
+cpu = m68hc11.HD6303()
+
+# AIM #$F0,$40 ; LDX #$0040 ; RTS   -> clears the low nibble of [$40], X=$0040
+cpu.load(bytes([0x71, 0xF0, 0x40, 0xCE, 0x00, 0x40, 0x39]), 0x0200)
+cpu.write(0x0040, 0x3C)
+state = cpu.call(0x0200)
+print(hex(cpu.read(0x0040)[0]))   # 0x30
+print(hex(state.x))               # 0x40
+```
+
+Decode and functional execution (registers, memory, condition codes) are
+accurate. Cycle counts for the shared 6801 base opcodes are inherited from the
+68HC11 table and are *not* guaranteed cycle-exact for the 6303; the six
+Hitachi-specific opcodes carry their documented HD6303 cycle counts.
+
 ## The `call()` harness
 
 `call()` pushes a sentinel return address, sets `PC` and any argument registers,

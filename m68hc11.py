@@ -26,8 +26,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple, Union
 
-__version__ = "0.1.0"
-__all__ = ["HC11", "Step", "State", "IllegalOpcode", "HC11Error", "__version__"]
+__version__ = "0.2.0"
+__all__ = [
+    "HC11",
+    "HD6303",
+    "Step",
+    "State",
+    "IllegalOpcode",
+    "HC11Error",
+    "__version__",
+]
 
 
 # --------------------------------------------------------------------------- #
@@ -701,6 +709,39 @@ def _op_xgdy(cpu, o):
     cpu.y = d
 
 
+# HD6301 / HD6303 extensions ------------------------------------------------- #
+def _op_slp(cpu, o):
+    # SLP: sleep until an interrupt.  Modeled like WAI's wait state but without
+    # stacking the machine context (the 6303 stacks only when the woken
+    # interrupt is actually taken).
+    cpu.waiting = True
+
+
+def _f_immmem(fn, store: bool):
+    """Build an AIM/OIM/EIM/TIM handler (immediate mask ``o.value`` vs ``[o.ea]``).
+
+    ``fn`` combines the memory byte with the mask; ``store`` writes the result
+    back (AIM/OIM/EIM) or leaves memory unchanged (TIM).  N/Z reflect the
+    result and V is cleared on all four.
+    """
+
+    def h(cpu: HC11, o: _Opnd) -> None:
+        r = fn(cpu.read8(o.ea), o.value) & 0xFF
+        if store:
+            cpu.write8(o.ea, r)
+        cpu.n = r & 0x80
+        cpu.z = r == 0
+        cpu.v = False
+
+    return h
+
+
+_op_aim = _f_immmem(lambda m, i: m & i, store=True)
+_op_oim = _f_immmem(lambda m, i: m | i, store=True)
+_op_eim = _f_immmem(lambda m, i: m ^ i, store=True)
+_op_tim = _f_immmem(lambda m, i: m & i, store=False)
+
+
 # push / pull
 def _op_psha(cpu, o):
     cpu._push8(cpu.a)
@@ -1167,6 +1208,51 @@ PAGE4: dict[int, Entry] = {
     0xEF: ("STX", "idx", _stx, 6),
 }
 
+# --------------------------------------------------------------------------- #
+# HD6301 / HD6303 page-1 opcode map.
+#
+# The Hitachi HD6301/HD6303 is a CMOS 6801/6803 with six extra instructions and
+# *without* the 68HC11-only additions, so its single opcode page is the shared
+# 6801 base (PAGE1 minus the HC11-only opcodes) plus the Hitachi extensions.
+#
+# Removed (HC11-only; undefined on the 6303, so they decode as illegal): the
+# 0x00 TEST opcode, IDIV/FDIV (0x02/0x03), the BSET/BCLR/BRSET/BRCLR bit ops
+# (0x12-0x15 direct, 0x1C-0x1F indexed), XGDX at 0x8F, and STOP at 0xCF.
+#
+# Added (Hitachi extensions; opcodes/lengths/cycles per the HD6301/6303 Series
+# Handbook): XGDX (0x18), SLP (0x1A) and the AIM/OIM/EIM/TIM immediate-with-
+# memory ops.  Note 0x18/0x1A are plain opcodes here, not HC11 prefix bytes.
+_HC11_ONLY_OPCODES = (
+    0x00,
+    0x02,
+    0x03,
+    0x12,
+    0x13,
+    0x14,
+    0x15,
+    0x1C,
+    0x1D,
+    0x1E,
+    0x1F,
+    0x8F,
+    0xCF,
+)
+PAGE1_6303: dict[int, Entry] = {op: e for op, e in PAGE1.items() if op not in _HC11_ONLY_OPCODES}
+PAGE1_6303.update(
+    {
+        0x18: ("XGDX", "inh", _op_xgdx, 2),
+        0x1A: ("SLP", "inh", _op_slp, 4),
+        0x61: ("AIM", "immidx", _op_aim, 7),
+        0x71: ("AIM", "immdir", _op_aim, 6),
+        0x62: ("OIM", "immidx", _op_oim, 7),
+        0x72: ("OIM", "immdir", _op_oim, 6),
+        0x65: ("EIM", "immidx", _op_eim, 7),
+        0x75: ("EIM", "immdir", _op_eim, 6),
+        0x6B: ("TIM", "immidx", _op_tim, 5),
+        0x7B: ("TIM", "immdir", _op_tim, 4),
+    }
+)
+
 
 # --------------------------------------------------------------------------- #
 # Timer / interrupt support (optional layer, spec section 6)
@@ -1219,6 +1305,11 @@ class HC11:
         # trace + decode scratch
         self._trace: Optional[Callable[[Step], None]] = None
         self._fetched: List[int] = []
+
+        # opcode dispatch tables.  CPU-variant subclasses (e.g. HD6303) swap
+        # these to change the decode without touching step()/disassemble().
+        self._page1 = PAGE1
+        self._prefixes = {0x18: (2, PAGE2), 0x1A: (3, PAGE3), 0xCD: (4, PAGE4)}
 
         # timer (created lazily by enable_timer)
         self._timer_on = False
@@ -1442,30 +1533,31 @@ class HC11:
     # ------------------------------------------------------------------ #
     # Execute one instruction
     # ------------------------------------------------------------------ #
+    def _fetch_entry(self):
+        """Fetch the opcode (plus any prefix byte) at PC.
+
+        Returns ``(entry, page, op, op2)`` where ``entry`` is the opcode-table
+        tuple (or ``None`` if undefined), ``page`` the table number (1 for the
+        base page), ``op`` the leading byte and ``op2`` the post-prefix byte (or
+        ``None``).  The active tables come from ``self._page1`` / ``self._prefixes``
+        so CPU variants decode differently without overriding this method.
+        """
+        op = self._fetch8()
+        prefix = self._prefixes.get(op)
+        if prefix is not None:
+            page, table = prefix
+            op2 = self._fetch8()
+            return table.get(op2), page, op, op2
+        return self._page1.get(op), 1, op, None
+
     def step(self) -> Step:
         """Decode and execute a single instruction, returning a :class:`Step`."""
         start_pc = self.pc
         self._fetched = []
-        op = self._fetch8()
-
-        if op == 0x18:
-            page, table = 2, PAGE2
-            op2 = self._fetch8()
-            entry = table.get(op2)
-        elif op == 0x1A:
-            page, table = 3, PAGE3
-            op2 = self._fetch8()
-            entry = table.get(op2)
-        elif op == 0xCD:
-            page, table = 4, PAGE4
-            op2 = self._fetch8()
-            entry = table.get(op2)
-        else:
-            page, table, op2 = 1, PAGE1, op
-            entry = table.get(op)
+        entry, page, op, op2 = self._fetch_entry()
 
         if entry is None:
-            if page == 1:
+            if op2 is None:
                 msg = f"illegal opcode ${op:02X} at ${start_pc:04X}"
             else:
                 msg = f"illegal opcode ${op:02X}{op2:02X} at ${start_pc:04X}"
@@ -1549,6 +1641,19 @@ class HC11:
             tgt = (self.pc + _signed8(rel)) & 0xFFFF
             o.target = tgt
             return f"{mnem} ${off:02X},{idxchar},#${mask:02X},${tgt:04X}"
+        if mode == "immdir":  # HD6303 AIM/OIM/EIM/TIM: #imm vs direct memory
+            imm = self._fetch8()
+            a = self._fetch8()
+            o.value = imm
+            o.ea = a
+            return f"{mnem} #${imm:02X},${a:02X}"
+        if mode == "immidx":  # HD6303 AIM/OIM/EIM/TIM: #imm vs indexed memory
+            imm = self._fetch8()
+            off = self._fetch8()
+            o.value = imm
+            o.off = off
+            o.ea = (idxval + off) & 0xFFFF
+            return f"{mnem} #${imm:02X},${off:02X},{idxchar}"
         raise HC11Error(f"unknown addressing mode {mode!r}")  # pragma: no cover
 
     # ------------------------------------------------------------------ #
@@ -1660,19 +1765,7 @@ class HC11:
             self.pc = addr & 0xFFFF
             self._fetched = []
             start_pc = self.pc
-            op = self._fetch8()
-            if op == 0x18:
-                page, table = 2, PAGE2
-                entry = table.get(self._fetch8())
-            elif op == 0x1A:
-                page, table = 3, PAGE3
-                entry = table.get(self._fetch8())
-            elif op == 0xCD:
-                page, table = 4, PAGE4
-                entry = table.get(self._fetch8())
-            else:
-                page, table = 1, PAGE1
-                entry = table.get(op)
+            entry, page, _op, _op2 = self._fetch_entry()
             if entry is None:
                 return Step(start_pc, bytes(self._fetched), "???", 0, None)
             mnem, mode, _handler, cyc = entry
@@ -1848,3 +1941,33 @@ class HC11:
             if self.irq_counts.get(vector, 0) >= target:
                 return "irq"
         return "max_cycles"
+
+
+class HD6303(HC11):
+    """A Hitachi HD6301 / HD6303 CPU core.
+
+    The HD6301/HD6303 is a CMOS 6801/6803 with six extra instructions and
+    without the 68HC11-only additions, so it has a single opcode page and no Y
+    register:
+
+    * **Added** -- ``XGDX`` (``$18``), ``SLP`` (``$1A``) and the
+      ``AIM``/``OIM``/``EIM``/``TIM`` immediate-with-memory bit operations
+      (``$61/$71`` ... ``$6B/$7B``).  Here ``$18`` and ``$1A`` are ordinary
+      opcodes, **not** the 68HC11 ``$18``/``$1A`` prefix bytes.
+    * **Removed** -- the ``$00`` TEST opcode, ``IDIV``/``FDIV``, the
+      ``BSET``/``BCLR``/``BRSET``/``BRCLR`` bit ops, ``STOP``, and the Y register
+      together with the ``$18``/``$1A``/``$CD`` prefix pages.  Those byte values
+      decode as illegal (raising :class:`IllegalOpcode`) rather than silently
+      mis-decoding as their 68HC11 meaning.
+
+    Decode and functional execution (registers, memory, condition codes) are
+    accurate.  Cycle counts for the shared 6801 base opcodes are inherited from
+    the 68HC11 table and are *not* guaranteed cycle-exact for the 6303; the six
+    Hitachi-specific opcodes carry their documented HD6303 cycle counts.
+    """
+
+    def __init__(self, *, ram_fill: int = 0x00) -> None:
+        super().__init__(ram_fill=ram_fill)
+        # Single opcode page; no $18/$1A/$CD prefixes.
+        self._page1 = PAGE1_6303
+        self._prefixes = {}
