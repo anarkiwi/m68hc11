@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "m68hc11"
-version = "0.1.0"
-description = "Instruction-level emulator for the Motorola 68HC11 microcontroller core"
+version = "0.2.0"
+description = "Instruction-level emulator for the Motorola 68HC11 and Hitachi HD6301/HD6303 microcontroller cores"
 readme = "README.md"
 requires-python = ">=3.9"
 license = "Apache-2.0"
@@ -14,6 +14,10 @@ authors = [{ name = "Josh Bailey", email = "josh@overlyspecific.com" }]
 keywords = [
     "68hc11",
     "m68hc11",
+    "hd6301",
+    "hd6303",
+    "6303",
+    "hitachi",
     "motorola",
     "emulator",
     "simulator",
