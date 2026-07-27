@@ -37,6 +37,7 @@ The import name is `m68hc11`:
 
 ```python
 import m68hc11
+
 cpu = m68hc11.HC11()
 ```
 
@@ -53,8 +54,8 @@ cpu = m68hc11.HC11()
 cpu.load(bytes([0x86, 0x07, 0xC6, 0x06, 0x3D, 0x39]), 0x2000)
 
 state = cpu.call(0x2000)
-print(state.d)        # 42
-print(state.cycles)   # 2 + 2 + 10 + 5 = 19 bus cycles
+print(state.d)  # 42
+print(state.cycles)  # 2 + 2 + 10 + 5 = 19 bus cycles
 ```
 
 ## Hitachi HD6301 / HD6303 mode
@@ -80,8 +81,8 @@ cpu = m68hc11.HD6303()
 cpu.load(bytes([0x71, 0xF0, 0x40, 0xCE, 0x00, 0x40, 0x39]), 0x0200)
 cpu.write(0x0040, 0x3C)
 state = cpu.call(0x0200)
-print(hex(cpu.read(0x0040)[0]))   # 0x30
-print(hex(state.x))               # 0x40
+print(hex(cpu.read(0x0040)[0]))  # 0x30
+print(hex(state.x))  # 0x40
 ```
 
 Decode and functional execution (registers, memory, condition codes) are
@@ -196,11 +197,11 @@ The on-chip register block base defaults to `$1000` and is parameterizable.
 
 ```python
 cpu = m68hc11.HC11()
-cpu.enable_timer()                 # registers in the $1000 block
+cpu.enable_timer()  # registers in the $1000 block
 cpu.set_regs(pc=0x0100, sp=0x01FF, ccr=0x00)  # I clear -> interrupts enabled
-cpu.write16(0x1018, 0x000A)        # TOC2 compare value
-cpu.write8(0x1022, 0x40)           # TMSK1: enable the OC2 interrupt
-cpu.write16(0xFFE6, 0x3000)        # OC2 interrupt vector -> handler
+cpu.write16(0x1018, 0x000A)  # TOC2 compare value
+cpu.write8(0x1022, 0x40)  # TMSK1: enable the OC2 interrupt
+cpu.write16(0xFFE6, 0x3000)  # OC2 interrupt vector -> handler
 cpu.load(bytes([0x20, 0xFE]), 0x0100)  # BRA * (spin)
 
 reason = cpu.run_until_irq(0xFFE6, count=1)
